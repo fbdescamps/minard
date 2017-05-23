@@ -21,6 +21,7 @@ import detector_state
 import pcadb
 import ecadb
 import nlrat
+import chstools
 
 
 TRIGGER_NAMES = \
@@ -307,7 +308,7 @@ def nhit():
 @app.route('/rat')
 def rathome():
     return render_template('rathome.html', runs=nlrat.available_runs())
-    
+
 @app.route('/rat/<int:run>')
 def ratrun(run = 0):
     return render_template("ratrun.html", run=nlrat.Run(run), error= not nlrat.hists_available(run))
@@ -567,13 +568,13 @@ def metric():
 
 @app.route('/eca')
 def eca():
-    runs = ecadb.runs_after_run(0)      
+    runs = ecadb.runs_after_run(0)
     return render_template('eca.html', runs=runs)
- 
+
 @app.route('/eca_run_detail/<run_number>')
 def eca_run_detail(run_number):
     run_type = redis.hget('eca-run-%i' % int(run_number),'run_type')
-    return render_template('eca_run_detail_%s.html' % run_type, run_number=run_number)      
+    return render_template('eca_run_detail_%s.html' % run_type, run_number=run_number)
 
 @app.route('/eca_status_detail/<run_number>')
 def eca_status_detail(run_number):
@@ -598,44 +599,70 @@ def eca_status_detail(run_number):
     run_status = int(ecadb.get_run_status(run_number))
 
     return render_template('eca_status_detail_%s.html' % run_type,
-			    run_number=run_number,statusfmt=statusfmt,testBit=testBit,run_status=run_status)      
+			    run_number=run_number,statusfmt=statusfmt,testBit=testBit,run_status=run_status)
+
+@app.route('/chs', methods=['GET'])
+@app.route('/chs/', methods=['GET'])
+@app.route('/chs/<int:run>', methods=['GET'])
+def chs(run=None):
+    def boolclass(bool_string):
+        bool_value = str(bool_string) == '1'
+        return "panel-success" if bool_value else "panel-danger"
+
+    def disabledclass(bool_string):
+         bool_value = str(bool_string) == '1'
+         return "enabled" if bool_value else "disabled"
+    dqxx = chstools.get_dqxx(run)
+    number_offline_tubes = chstools.count_offline_tubes(dqxx)
+    bit_select = request.form.get('bit_select')
+    return render_template("chs_detail.html",
+                           run=run,
+                           bit_defs=chstools.DQXX_DEFINITION,
+                           dqxx_json=json.dumps(dqxx),
+                           offline_tubes_json=json.dumps([int( not chstools.is_tube_online(dqxx, lcn)) for lcn in range(0, len(dqxx))]),
+                           number_offline_tubes=number_offline_tubes,
+                           boolclass=boolclass,
+                           disabledclass=disabledclass,
+                           run_number=run,
+                           bit_select=bit_select)
+
 
 @app.route('/pcatellie', methods=['GET'])
 def pcatellie():
-    
+
     def boolfmt(bool_string):
         bool_value = bool_string == '1'
         return "Pass" if not bool_value else "Fail"
-    
+
     def boolclass(bool_string):
         bool_value = bool_string == '1'
         return "success" if not bool_value else "danger"
-    
+
     start_run = request.args.get("start_run", 0)
-    installed_only = request.args.get("installed_only", False)    
+    installed_only = request.args.get("installed_only", False)
     runs = pcadb.runs_after_run(start_run)
     # Deal with expired runs
-    runs = [run for run in runs if (len(run) > 0)]      
+    runs = [run for run in runs if (len(run) > 0)]
     fibers = list()
     for fiber in pcadb.FIBER_POSITION:
-        runs_for_fiber = [run for run in runs 
+        runs_for_fiber = [run for run in runs
                           if int(run["fiber_number"]) == fiber[0]]
-        sorted_runs = sorted(runs_for_fiber, 
+        sorted_runs = sorted(runs_for_fiber,
                              key=lambda run: (run["pca_status"] == "True", int(run["run_number"])),
                              reverse=True)
-        pca_run = sorted_runs[0]["run_number"] if sorted_runs else ""  
-        pca_result = sorted_runs[0]["pca_status"] if sorted_runs else ""                   
+        pca_run = sorted_runs[0]["run_number"] if sorted_runs else ""
+        pca_result = sorted_runs[0]["pca_status"] if sorted_runs else ""
         fibers.append({'fiber_number': fiber[0],
-                       'node': fiber[1], 
-                       'ab': fiber[2], 
-                       'is_installed': fiber[3], 
+                       'node': fiber[1],
+                       'ab': fiber[2],
+                       'is_installed': fiber[3],
                        'is_dead': fiber[4],
                        'fiber_type': fiber[5],
                        'pca_run': pca_run,
                        'pca_result': pca_result})
-            
+
     # ['Fiber', 'Node', 'AB', 'IsInstalled', 'IsDead', 'Type'],
-       
+
     return render_template('pcatellie.html',
                            runs=runs,
                            boolfmt=boolfmt,
@@ -643,18 +670,18 @@ def pcatellie():
                            fibers=fibers,
                            start_run=start_run,
                            installed_only=installed_only,
-    )    
-    
+    )
+
 @app.route('/pca_run_detail/<run_number>')
 def pca_run_detail(run_number):
-    
+
     return render_template('pca_run_detail.html',
-                            run_number=run_number)      
+                            run_number=run_number)
 
 @app.route('/calibdq')
 def calibdq():
         return render_template('calibdq.html')
-   
+
 @app.route('/calibdq_tellie')
 def calibdq_tellie():
     run_dict = {}
